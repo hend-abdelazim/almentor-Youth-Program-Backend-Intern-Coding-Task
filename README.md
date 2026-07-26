@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Task Management REST API
 
 Production-ready Task Management REST API built with ASP.NET Core 8, Entity Framework Core, SQL Server, and JWT Authentication.
@@ -95,17 +94,6 @@ Task Management REST API/
 ├── scripts/                             ← PowerShell convenience scripts
 └── README.md
 ```
-
-### Layer Dependencies (→ = depends on)
-```
-Api → Application ← Domain
-     → Infrastructure → Application → Domain
-                      ↘ Domain
-```
-
-No layer directly depends on EF Core or database details except Infrastructure.
-
----
 
 ## 5. Project Structure
 
@@ -760,47 +748,25 @@ Every key request includes `pm.test(...)` that checks:
 
 ---
 
-## 20. Convenience Scripts (`scripts/` folder)
+## 20. Design Decisions
 
-All scripts are PowerShell. Windows 10/11 ships with PowerShell 5.1 — no extra install needed.
-
-| Script              | Purpose                                                                 |
-|---------------------|-------------------------------------------------------------------------|
-| `build.ps1`         | Restores packages + builds solution (Debug/Release).                   |
-| `run.ps1`           | Builds + runs API via http or https profile.                           |
-| `migrate.ps1`       | `-MigrationName X` creates a migration. Add `-Apply` to `database update`. |
-| `seed.ps1`          | Applies migrations + starts API in Dev mode (triggers automatic seed). |
-| `test.ps1`          | `-Type unit|integration|all` runs unit/integration/all tests.         |
-
-Usage examples:
-```powershell
-.\scripts\build.ps1 -Configuration Release
-.\scripts\migrate.ps1 -MigrationName InitialCreate -Apply
-.\scripts\test.ps1 -Type all
-.\scripts\run.ps1 -LaunchProfile https
-```
-
----
-
-## 21. Design Decisions
-
-### 21.1 Why Clean Architecture?
+### 20.1 Why Clean Architecture?
 Keeps EF Core / SQL Server / JWT implementation details (Infrastructure) isolated from the business rules (Application) and domain model (Domain). Allowed me to swap the database in tests from SQL Server → InMemory without touching any service code.
 
-### 21.2 Why Soft-Deletes via Global Query Filters?
+### 20.2 Why Soft-Deletes via Global Query Filters?
 EF Core global query filters are the cleanest way to guarantee deleted rows never leak into normal queries. They are applied **automatically** to every LINQ query on `AppDbContext`, so it's impossible for a developer to "forget" a `Where(x => x.DeletedAt == null)` check.
 
-### 21.3 How Are N+1 Queries Avoided?
+### 20.3 How Are N+1 Queries Avoided?
 - Task queries use `.Include(t => t.Project)` to eagerly load the project name in a **single JOIN**.
 - `GetAllByOwnerIdAsync` uses one LINQ query with `Where(t => t.Project.OwnerId == ownerId)` — that's one trip to the DB for any number of tasks.
 - No lazy loading proxies enabled.
 
-### 21.4 How Is Validation Handled?
+### 20.4 How Is Validation Handled?
 Two-tiered:
 1. **FluentValidation** runs in controllers before any business logic (model validation, enum values, due-date rules, string lengths).
 2. **Application-level rules** in the services layer: duplicate names, ownership checks (403), not-found (404), past due date guard.
 
-### 21.5 How Are Ownership & IDOR Prevented?
+### 20.5 How Are Ownership & IDOR Prevented?
 - Controllers **never read OwnerId from the request body**.
 - User ID is always extracted from JWT claims: `User.FindFirstValue("uid")`.
 - Every service method accepts both `(entityId, userId)` and loads the entity + project owner via `Include` before doing any operation. If `OwnerId != userId` → **403**.
@@ -808,7 +774,7 @@ Two-tiered:
 
 ---
 
-## 22. Quick Start (Under 10 Minutes)
+## 21. Quick Start (Under 10 Minutes)
 
 ```powershell
 # 1. Open PowerShell
@@ -842,82 +808,7 @@ notepad src\TaskManagement.Api\appsettings.Development.json
 # 11. Explore!
 ```
 
-✅ From `git clone` to running API with seeded data in under **10 minutes**.
-
 ---
-
-## 23. Red Flags Avoided / Green Flags Implemented
-
-| ✅ Green Flag                              | ✅ Implemented? |
-|--------------------------------------------|-----------------|
-| No manual SQL scripts, only EF migrations  | ✅              |
-| Unique project names (DB-level constraint) | ✅              |
-| Proper indexes on foreign keys + filter columns | ✅        |
-| No N+1 queries                             | ✅              |
-| Case-insensitive search                    | ✅              |
-| Soft deletes via global query filters      | ✅              |
-| Project deletion cascades to tasks         | ✅ (soft)       |
-| JWT auth + per-user ownership isolation    | ✅ (403 on IDOR)|
-| Consistent problem+json error responses    | ✅              |
-| Meaningful tests (not only assert 200 OK)  | ✅ (63 tests)   |
-| Seed mechanism with demo credentials       | ✅              |
-| Convenience scripts (Windows PowerShell)   | ✅              |
-| Clear commit-ready project structure       | ✅              |
-| Excellent README with complete API docs    | ✅ (this file)  |
-
-| ❌ Red Flag Avoided                        |
-|--------------------------------------------|
-| Never returns 500 for missing FK / duplicate name / invalid enum |
-| No 500-line single files / no "everything in Program.cs" |
-| No plaintext passwords; PBKDF2 salted hashing |
-| No Client.OwnerId trusted; owner ID from JWT |
-| No TODO stubs |
-| No unused default template files |
-
----
-
-## 24. Example Requests & Responses
-
-### Register → Login → Create Project → Create Task → List all Tasks
-
-```http
-# 1. Register
-POST /api/auth/register
-Content-Type: application/json
-{ "username":"alice","email":"a@b.com","password":"Pass123!","confirmPassword":"Pass123!" }
-→ 201 { "token":"eyJ...", "userId":"7c9ecf6c-...", ... }
-
-# 2. Login
-POST /api/auth/login
-Content-Type: application/json
-{ "usernameOrEmail":"alice","password":"Pass123!" }
-→ 200 { "token":"eyJ...", ... }
-
-# 3. Create project
-Authorization: Bearer eyJ...
-POST /api/projects
-{ "name":"Q4 OKR Project" }
-→ 201 Location: /api/projects/3fa85f64-...
-{ "id":"3fa85f64-...", "name":"Q4 OKR Project", "createdAt":"..." }
-
-# 4. Create task
-Authorization: Bearer eyJ...
-POST /api/projects/3fa85f64-/tasks
-{ "title":"Draft OKR document","priority":"High","dueDate":"2026-12-31T00:00:00Z" }
-→ 201 { "id":"a1b2c3d4-...","projectName":"Q4 OKR Project","status":"Todo","priority":"High", ... }
-
-# 5. List all tasks with search + pagination
-Authorization: Bearer eyJ...
-GET /api/tasks?q=okr&page=1&limit=10&sort_by=priority&sort_direction=desc
-→ 200
-{
-  "items": [{ "id":"a1b2c3d4-...", "projectName":"Q4 OKR Project", "title":"Draft OKR document", "status":"Todo", "priority":"High", "dueDate":"2026-12-31T00:00:00Z", ... }],
-  "page": 1, "limit": 10, "totalCount": 1, "totalPages": 1
-}
-```
 
 ---
 =======
-# almentor-Youth-Program---Backend-Intern-Coding-Task
-Production-ready Task Management REST API built with ASP.NET Core 8, Entity Framework Core, SQL Server, and JWT Authentication.
->>>>>>> acae75802f275af0f700235be47cf2190c6b36ae
